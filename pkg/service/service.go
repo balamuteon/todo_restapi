@@ -1,17 +1,18 @@
 package service
 
-import "github.com/balamuteon/todo_restapi/pkg/repository"
+import (
+	todo "github.com/balamuteon/todo_restapi"
+	"github.com/balamuteon/todo_restapi/pkg/repository"
+)
 
 type Authorization interface {
-
+	CreateUser(user todo.User) (int, error)
 }
 
 type TodoList interface {
-
 }
 
 type TodoItem interface {
-
 }
 
 type Service struct {
@@ -22,6 +23,6 @@ type Service struct {
 
 func NewService(repos *repository.Repository) *Service {
 	return &Service{
-
+		Authorization: NewAuthService(repos.Authorization),
 	}
 }
