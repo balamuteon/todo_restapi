@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/balamuteon/todo_restapi" // Исправлен путь импорта на корневой
+	"github.com/balamuteon/todo_restapi"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,6 +26,26 @@ func (h *Handler) signUp(c *gin.Context) {
 	})
 }
 
+type signInInput struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
 func (h *Handler) signIn(c *gin.Context) {
-	// TODO implement me
+	var input signInInput
+
+	if err := c.BindJSON(&input); err != nil {
+		newErrorResponse(c, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	token, err := h.services.Authorization.GenerateToken(input.Username, input.Password)
+	if err != nil {
+		newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"token": token,
+	})
 }
