@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/balamuteon/todo_restapi"
+	todo "github.com/balamuteon/todo_restapi"
 	"github.com/gin-gonic/gin"
 )
 

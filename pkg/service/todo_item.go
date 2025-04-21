@@ -1,12 +1,12 @@
 package service
 
 import (
+	todo "github.com/balamuteon/todo_restapi"
 	"github.com/balamuteon/todo_restapi/pkg/repository"
-	"github.com/balamuteon/todo_restapi"
-) 
+)
 
 type TodoItemService struct {
-	repo repository.TodoItem
+	repo     repository.TodoItem
 	listRepo repository.TodoList
 }
 
@@ -24,11 +24,11 @@ func (s *TodoItemService) Create(userId, listId int, item todo.TodoItem) (int, e
 	return s.repo.Create(listId, item)
 }
 
-func (s * TodoItemService) GetAll(userId, listId int) ([]todo.TodoItem, error) {
+func (s *TodoItemService) GetAll(userId, listId int) ([]todo.TodoItem, error) {
 	return s.repo.GetAll(userId, listId)
 }
 
-func (s * TodoItemService) GetById(userId, itemId int) (todo.TodoItem, error) {
+func (s *TodoItemService) GetById(userId, itemId int) (todo.TodoItem, error) {
 	return s.repo.GetById(userId, itemId)
 }
 

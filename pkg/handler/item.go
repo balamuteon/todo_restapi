@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strconv"
 
+	todo "github.com/balamuteon/todo_restapi"
 	"github.com/gin-gonic/gin"
-	"github.com/balamuteon/todo_restapi"
 )
 
 func (h *Handler) createItem(c *gin.Context) {
@@ -86,7 +86,7 @@ func (h *Handler) updateItem(c *gin.Context) {
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		newErrorResponse(c, http.StatusBadRequest ,"invalid id param")
+		newErrorResponse(c, http.StatusBadRequest, "invalid id param")
 		return
 	}
 

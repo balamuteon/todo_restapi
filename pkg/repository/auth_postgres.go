@@ -3,7 +3,7 @@ package repository
 import (
 	"fmt"
 
-	"github.com/balamuteon/todo_restapi"
+	todo "github.com/balamuteon/todo_restapi"
 	"github.com/jmoiron/sqlx"
 )
 

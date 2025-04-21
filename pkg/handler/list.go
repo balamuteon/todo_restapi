@@ -80,7 +80,7 @@ func (h *Handler) updateList(c *gin.Context) {
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
-		newErrorResponse(c, http.StatusBadRequest ,"invalid id param")
+		newErrorResponse(c, http.StatusBadRequest, "invalid id param")
 		return
 	}
 

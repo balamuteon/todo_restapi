@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/balamuteon/todo_restapi/pkg/service"
+	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
