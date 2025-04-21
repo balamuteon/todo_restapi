@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/balamuteon/todo_restapi"
+	todo "github.com/balamuteon/todo_restapi"
 	"github.com/balamuteon/todo_restapi/pkg/repository"
 	"github.com/dgrijalva/jwt-go"
 )
 
 const (
-	salt = "nfg9843io;2;'1="
+	salt       = "nfg9843io;2;'1="
 	signingKey = "GfsDLj6&*4u6j&$LK&kgt(&FG7Hw?"
-	tokenTTL = 12 * time.Hour
+	tokenTTL   = 12 * time.Hour
 )
 
 type tokenClaims struct {
@@ -45,7 +45,7 @@ func (s *AuthService) GenerateToken(username, password string) (string, error) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, &tokenClaims{
 		jwt.StandardClaims{
 			ExpiresAt: time.Now().Add(tokenTTL).Unix(),
-			IssuedAt: time.Now().Unix(),
+			IssuedAt:  time.Now().Unix(),
 		},
 		user.Id,
 	})
