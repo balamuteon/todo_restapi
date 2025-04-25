@@ -22,7 +22,7 @@ func TestTodoListPostgres_NewTodoListPostgres(t *testing.T) {
 				Port:     "5437",
 				Username: "postgres",
 				Password: "123",
-				DBName:   "todo_rest",
+				DBName:   "todo_rest_test",
 				SSLMode:  "disable",
 			},
 			wantErr: false,
@@ -57,31 +57,9 @@ func TestTodoListPostgres_NewTodoListPostgres(t *testing.T) {
 	}
 }
 
-func setupTestDB(t *testing.T) (*sqlx.DB, *TodoListPostgres, *AuthPostgres, func()) {
-	cfg := Config{
-		Host:     "localhost",
-		Port:     "5437",
-		Username: "postgres",
-		Password: "123",
-		DBName:   "todo_rest_test",
-		SSLMode:  "disable",
-	}
-
-	db, err := NewPostgresDB(cfg)
-	assert.NoError(t, err, "failed to connect to test database")
-
-	todoListRepo := &TodoListPostgres{db: db}
-	authRepo := &AuthPostgres{db: db}
-	cleanup := func() {
-		db.Close()
-	}
-
-	return db, todoListRepo, authRepo, cleanup
-}
-
 func TestTodoListPostgres_Create(t *testing.T) {
 	t.Run("successfully create list", func(t *testing.T) {
-		db, todoListRepo, authRepo, cleanup := setupTestDB(t)
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -89,23 +67,10 @@ func TestTodoListPostgres_Create(t *testing.T) {
 		assert.NoError(t, err, "failed to truncate tables")
 
 		// Создаем пользователя
-		user := todo.User{
-			Name:     "John Doe",
-			Username: "johndoe",
-			Password: "hashedpassword",
-		}
-		userId, err := authRepo.CreateUser(user)
-		assert.NoError(t, err, "failed to create user")
-		assert.Equal(t, 1, userId, "expected user ID=1")
+		userId := createTestUser(t, authRepo, db)
 
 		// Создаем список
-		list := todo.TodoList{
-			Title:       "My List",
-			Description: "My tasks",
-		}
-		listId, err := todoListRepo.Create(userId, list)
-		assert.NoError(t, err, "expected no error")
-		assert.Equal(t, 1, listId, "expected list ID=1")
+		listId, list := createTestList(t, todoListRepo, userId)
 
 		// Проверяем запись в todo_lists
 		var dbList todo.TodoList
@@ -123,7 +88,7 @@ func TestTodoListPostgres_Create(t *testing.T) {
 	})
 
 	t.Run("error: non-existent userId", func(t *testing.T) {
-		db, todoListRepo, _, cleanup := setupTestDB(t)
+		db, todoListRepo, _, _, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -131,11 +96,9 @@ func TestTodoListPostgres_Create(t *testing.T) {
 		assert.NoError(t, err, "failed to truncate tables")
 
 		// Пытаемся создать список с несуществующим userId
-		list := todo.TodoList{
-			Title:       "My List",
-			Description: "My tasks",
-		}
-		listId, err := todoListRepo.Create(999, list)
+		non_existing_userId := 999
+		list := todo.TodoList{}
+		listId, err := todoListRepo.Create(non_existing_userId, list)
 		assert.Error(t, err, "expected error")
 		assert.Equal(t, 0, listId, "expected list ID=0")
 
@@ -154,7 +117,7 @@ func TestTodoListPostgres_Create(t *testing.T) {
 
 func TestTodoListPostgres_GetAll(t *testing.T) {
 	t.Run("successfully get all lists", func(t *testing.T) {
-		db, todoListRepo, authRepo, cleanup := setupTestDB(t)
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -198,7 +161,7 @@ func TestTodoListPostgres_GetAll(t *testing.T) {
 	})
 
 	t.Run("non-existent userId", func(t *testing.T) {
-		db, todoListRepo, _, cleanup := setupTestDB(t)
+		db, todoListRepo, _, _, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -215,7 +178,7 @@ func TestTodoListPostgres_GetAll(t *testing.T) {
 
 func TestTodoListPostgres_GetById(t *testing.T) {
 	t.Run("successfull getting by id", func(t *testing.T) {
-		db, todoListRepo, authRepo, cleanup := setupTestDB(t)
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -266,7 +229,7 @@ func TestTodoListPostgres_GetById(t *testing.T) {
 
 func TestTodoListPostgres_Delete(t *testing.T) {
 	t.Run("successfull deleting by id", func(t *testing.T) {
-		db, todoListRepo, authRepo, cleanup := setupTestDB(t)
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
 		defer cleanup()
 
 		// Очистка таблиц
@@ -282,7 +245,7 @@ func TestTodoListPostgres_Delete(t *testing.T) {
 		userId, err := authRepo.CreateUser(user)
 		assert.NoError(t, err, "failed to create user")
 		assert.Equal(t, 1, userId, "expected user ID=1")
-		
+
 		// создаем список
 		list := todo.TodoList{
 			Title:       "First List",
@@ -302,13 +265,172 @@ func TestTodoListPostgres_Delete(t *testing.T) {
 	})
 }
 
+func TestTodoListPostgres_Update(t *testing.T) {
+	t.Run("update only title", func(t *testing.T) {
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		// Очистка таблиц
+		_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
+		assert.NoError(t, err, "failed to truncate tables")
+
+		// Подготовка данных
+		userId := createTestUser(t, authRepo, db)
+		listId, originalList := createTestList(t, todoListRepo, userId)
+
+		// Обновление
+		newTitle := "Updated Title"
+		input := todo.UpdateListInput{
+			Title: &newTitle,
+		}
+		err = todoListRepo.Update(userId, listId, input)
+		assert.NoError(t, err, "expected no error")
+
+		// Проверка
+		expectedList := originalList
+		expectedList.Title = newTitle
+		checkList(t, db, listId, expectedList)
+	})
+
+	t.Run("update only description", func(t *testing.T) {
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		// Очистка таблиц
+		_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
+		assert.NoError(t, err, "failed to truncate tables")
+
+		// Подготовка данных
+		userId := createTestUser(t, authRepo, db)
+		listId, originalList := createTestList(t, todoListRepo, userId)
+
+		// Обновление
+		newDescription := "Updated tasks"
+		input := todo.UpdateListInput{
+			Description: &newDescription,
+		}
+		err = todoListRepo.Update(userId, listId, input)
+		assert.NoError(t, err, "expected no error")
+
+		// Проверка
+		expectedList := originalList
+		expectedList.Description = newDescription
+		checkList(t, db, listId, expectedList)
+	})
+
+	t.Run("update both title and description", func(t *testing.T) {
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		// Очистка таблиц
+		_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
+		assert.NoError(t, err, "failed to truncate tables")
+
+		// Подготовка данных
+		userId := createTestUser(t, authRepo, db)
+		listId, originalList := createTestList(t, todoListRepo, userId)
+
+		// Обновление
+		newTitle := "Updated Title"
+		newDescription := "Updated tasks"
+		input := todo.UpdateListInput{
+			Title:       &newTitle,
+			Description: &newDescription,
+		}
+		err = todoListRepo.Update(userId, listId, input)
+		assert.NoError(t, err, "expected no error")
+
+		// Проверка
+		expectedList := originalList
+		expectedList.Title = newTitle
+		expectedList.Description = newDescription
+		checkList(t, db, listId, expectedList)
+	})
+
+	t.Run("no fields to update", func(t *testing.T) {
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		// Очистка таблиц
+		_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
+		assert.NoError(t, err, "failed to truncate tables")
+
+		// Подготовка данных
+		userId := createTestUser(t, authRepo, db)
+		listId, originalList := createTestList(t, todoListRepo, userId)
+
+		// Обновление
+		input := todo.UpdateListInput{}
+		err = todoListRepo.Update(userId, listId, input)
+		assert.Error(t, err, "expected error due to invalid query")
+		assert.Contains(t, err.Error(), "syntax error", "expected SQL syntax error")
+
+		// Проверка, что список не изменился
+		checkList(t, db, listId, originalList)
+	})
+
+	t.Run("non-existent userId or listId", func(t *testing.T) {
+		db, todoListRepo, _, authRepo, cleanup := setupTestDB(t)
+		defer cleanup()
+
+		// Очистка таблиц
+		_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
+		assert.NoError(t, err, "failed to truncate tables")
+
+		// Подготовка данных
+		userId := createTestUser(t, authRepo, db)
+		listId, originalList := createTestList(t, todoListRepo, userId)
+
+		// Обновление с несуществующим userId
+		newTitle := "Updated Title"
+		input := todo.UpdateListInput{Title: &newTitle}
+		err = todoListRepo.Update(999, listId, input)
+		assert.NoError(t, err, "expected no error, but no rows affected")
+
+		// Проверка, что список не изменился
+		checkList(t, db, listId, originalList)
+
+		// Обновление с несуществующим listId
+		err = todoListRepo.Update(userId, 999, input)
+		assert.NoError(t, err, "expected no error, but no rows affected")
+
+		// Проверка, что список не изменился
+		checkList(t, db, listId, originalList)
+	})
+}
+
+
+func setupTestDB(t *testing.T) (*sqlx.DB, *TodoListPostgres, *TodoItemPostgres, *AuthPostgres, func()) {
+	cfg := Config{
+		Host:     "localhost",
+		Port:     "5437",
+		Username: "postgres",
+		Password: "123",
+		DBName:   "todo_rest_test",
+		SSLMode:  "disable",
+	}
+
+	db, err := NewPostgresDB(cfg)
+	assert.NoError(t, err, "failed to connect to test database")
+
+	todoListRepo := &TodoListPostgres{db: db}
+	todoItemRepo := &TodoItemPostgres{db: db}
+	authRepo := &AuthPostgres{db: db}
+	cleanup := func() {
+		db.Close()
+	}
+
+	return db, todoListRepo, todoItemRepo, authRepo, cleanup
+}
+
+
 func createTestUser(t *testing.T, authRepo *AuthPostgres, db *sqlx.DB) int {
 	_, err := db.Exec("TRUNCATE TABLE users RESTART IDENTITY CASCADE")
 	assert.NoError(t, err, "failed to truncate users")
 	user := todo.User{
-			Name:     "John Doe",
-			Username: "johndoe",
-			Password: "hashedpassword",
+		Name:     "John Doe",
+		Username: "johndoe",
+		Password: "hashedpassword",
 	}
 	userId, err := authRepo.CreateUser(user)
 	assert.NoError(t, err, "failed to create user")
@@ -318,8 +440,8 @@ func createTestUser(t *testing.T, authRepo *AuthPostgres, db *sqlx.DB) int {
 
 func createTestList(t *testing.T, todoListRepo *TodoListPostgres, userId int) (int, todo.TodoList) {
 	list := todo.TodoList{
-			Title:       "Original List",
-			Description: "Original tasks",
+		Title:       "Original List",
+		Description: "Original tasks",
 	}
 	listId, err := todoListRepo.Create(userId, list)
 	assert.NoError(t, err, "failed to create list")
@@ -328,143 +450,22 @@ func createTestList(t *testing.T, todoListRepo *TodoListPostgres, userId int) (i
 	return listId, list
 }
 
+func createTestItem(t *testing.T, todoItemRepo *TodoItemPostgres, listId int) (int, todo.TodoItem) {
+	item := todo.TodoItem{
+		Title:       "Important",
+		Description: "Make something important",
+		Done: false,
+	}
+	itemId, err := todoItemRepo.Create(listId, item)
+	assert.NoError(t, err, "failed to create item")
+	assert.Equal(t, 1, itemId, "expected list ID=1")
+	item.Id = itemId
+	return itemId, item
+}
+
 func checkList(t *testing.T, db *sqlx.DB, listId int, expected todo.TodoList) {
 	var dbList todo.TodoList
 	err := db.Get(&dbList, "SELECT id, title, description FROM todo_lists WHERE id=$1", listId)
 	assert.NoError(t, err, "failed to fetch list")
 	assert.Equal(t, expected, dbList, "list mismatch")
-}
-
-func TestTodoListPostgres_Update(t *testing.T) {
-	t.Run("update only title", func(t *testing.T) {
-			db, todoListRepo, authRepo, cleanup := setupTestDB(t)
-			defer cleanup()
-
-			// Очистка таблиц
-			_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
-			assert.NoError(t, err, "failed to truncate tables")
-
-			// Подготовка данных
-			userId := createTestUser(t, authRepo, db)
-			listId, originalList := createTestList(t, todoListRepo, userId)
-
-			// Обновление
-			newTitle := "Updated Title"
-			input := todo.UpdateListInput{
-					Title: &newTitle,
-			}
-			err = todoListRepo.Update(userId, listId, input)
-			assert.NoError(t, err, "expected no error")
-
-			// Проверка
-			expectedList := originalList
-			expectedList.Title = newTitle
-			checkList(t, db, listId, expectedList)
-	})
-
-	t.Run("update only description", func(t *testing.T) {
-			db, todoListRepo, authRepo, cleanup := setupTestDB(t)
-			defer cleanup()
-
-			// Очистка таблиц
-			_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
-			assert.NoError(t, err, "failed to truncate tables")
-
-			// Подготовка данных
-			userId := createTestUser(t, authRepo, db)
-			listId, originalList := createTestList(t, todoListRepo, userId)
-
-			// Обновление
-			newDescription := "Updated tasks"
-			input := todo.UpdateListInput{
-					Description: &newDescription,
-			}
-			err = todoListRepo.Update(userId, listId, input)
-			assert.NoError(t, err, "expected no error")
-
-			// Проверка
-			expectedList := originalList
-			expectedList.Description = newDescription
-			checkList(t, db, listId, expectedList)
-	})
-
-	t.Run("update both title and description", func(t *testing.T) {
-			db, todoListRepo, authRepo, cleanup := setupTestDB(t)
-			defer cleanup()
-
-			// Очистка таблиц
-			_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
-			assert.NoError(t, err, "failed to truncate tables")
-
-			// Подготовка данных
-			userId := createTestUser(t, authRepo, db)
-			listId, originalList := createTestList(t, todoListRepo, userId)
-
-			// Обновление
-			newTitle := "Updated Title"
-			newDescription := "Updated tasks"
-			input := todo.UpdateListInput{
-					Title:       &newTitle,
-					Description: &newDescription,
-			}
-			err = todoListRepo.Update(userId, listId, input)
-			assert.NoError(t, err, "expected no error")
-
-			// Проверка
-			expectedList := originalList
-			expectedList.Title = newTitle
-			expectedList.Description = newDescription
-			checkList(t, db, listId, expectedList)
-	})
-
-	t.Run("no fields to update", func(t *testing.T) {
-			db, todoListRepo, authRepo, cleanup := setupTestDB(t)
-			defer cleanup()
-
-			// Очистка таблиц
-			_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
-			assert.NoError(t, err, "failed to truncate tables")
-
-			// Подготовка данных
-			userId := createTestUser(t, authRepo, db)
-			listId, originalList := createTestList(t, todoListRepo, userId)
-
-			// Обновление
-			input := todo.UpdateListInput{}
-			err = todoListRepo.Update(userId, listId, input)
-			assert.Error(t, err, "expected error due to invalid query")
-			assert.Contains(t, err.Error(), "syntax error", "expected SQL syntax error")
-
-			// Проверка, что список не изменился
-			checkList(t, db, listId, originalList)
-	})
-
-	t.Run("non-existent userId or listId", func(t *testing.T) {
-			db, todoListRepo, authRepo, cleanup := setupTestDB(t)
-			defer cleanup()
-
-			// Очистка таблиц
-			_, err := db.Exec("TRUNCATE TABLE users, todo_lists, users_lists RESTART IDENTITY CASCADE")
-			assert.NoError(t, err, "failed to truncate tables")
-
-			// Подготовка данных
-			userId := createTestUser(t, authRepo, db)
-			listId, originalList := createTestList(t, todoListRepo, userId)
-
-			// Обновление с несуществующим userId
-			newTitle := "Updated Title"
-			input := todo.UpdateListInput{Title: &newTitle}
-			err = todoListRepo.Update(999, listId, input)
-			assert.NoError(t, err, "expected no error, but no rows affected")
-
-			// Проверка, что список не изменился
-			checkList(t, db, listId, originalList)
-
-			// Обновление с несуществующим listId
-			err = todoListRepo.Update(userId, 999, input)
-			assert.NoError(t, err, "expected no error, but no rows affected")
-
-			// Проверка, что список не изменился
-			checkList(t, db, listId, originalList)
-	})
 }

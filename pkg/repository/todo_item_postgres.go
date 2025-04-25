@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -35,7 +36,7 @@ func (r *TodoItemPostgres) Create(listId int, item todo.TodoItem) (int, error) {
 	_, err = tx.Exec(createListItemsQuery, listId, itemId)
 	if err != nil {
 		tx.Rollback()
-		return 0, nil
+		return 0, err
 	}
 
 	return itemId, tx.Commit()
@@ -50,6 +51,10 @@ func (r *TodoItemPostgres) GetAll(userId, listId int) ([]todo.TodoItem, error) {
 		todoItemsTable, listsItemsTable, usersListsTable)
 	if err := r.db.Select(&items, query, listId, userId); err != nil {
 		return nil, err
+	}
+
+	if len(items) == 0 {
+		return nil, errors.New("not found")
 	}
 
 	return items, nil

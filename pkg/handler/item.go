@@ -50,7 +50,7 @@ func (h *Handler) getAllItems(c *gin.Context) {
 
 	items, err := h.services.TodoItem.GetAll(userId, listId)
 	if err != nil {
-		newErrorResponse(c, http.StatusBadRequest, "invalid list id param")
+		newErrorResponse(c, http.StatusBadRequest, "unable to provide requested data")
 		return
 	}
 
