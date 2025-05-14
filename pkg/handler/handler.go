@@ -3,15 +3,18 @@ package handler
 import (
 	"github.com/balamuteon/todo_restapi/pkg/service"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 )
 
 type Handler struct {
 	services *service.Service
+	redis *redis.Client
 }
 
-func NewHandler(services *service.Service) *Handler {
+func NewHandler(services *service.Service, redisClient*redis.Client) *Handler {
 	return &Handler{
 		services: services,
+		redis: redisClient,
 	}
 }
 

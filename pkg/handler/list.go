@@ -1,15 +1,23 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	todo "github.com/balamuteon/todo_restapi"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
+	"github.com/sirupsen/logrus"
 )
 
+const cacheTTL = 60 * time.Second
+
 func (h *Handler) createList(c *gin.Context) {
-	UserId, err := getUserId(c)
+	userId, err := getUserId(c)
 	if err != nil {
 		return
 	}
@@ -20,11 +28,14 @@ func (h *Handler) createList(c *gin.Context) {
 		return
 	}
 
-	id, err := h.services.TodoList.Create(UserId, input)
+	id, err := h.services.TodoList.Create(userId, input)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.invalidateCache(userId)
+
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"id": id,
 	})
@@ -40,10 +51,38 @@ func (h *Handler) getAllLists(c *gin.Context) {
 		return
 	}
 
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("lists:user:%d", userId)
+	cachedLists, err := h.redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var lists []todo.TodoList
+		if err := json.Unmarshal([]byte(cachedLists), &lists); err != nil {
+			newErrorResponse(c, http.StatusInternalServerError, "failed to unmarshal cached lists")
+			return
+		}
+		// logrus.Debug("got lists from redis")
+		c.JSON(http.StatusOK, getAllListsResponse{Data: lists})
+		return
+	} else if err != redis.Nil {
+		newErrorResponse(c, http.StatusInternalServerError, "failed to get lists from redis: "+err.Error())
+		return
+	}
+
 	lists, err := h.services.TodoList.GetAll(userId)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	listsBytes, err := json.Marshal(lists)
+	if err != nil {
+		newErrorResponse(c, http.StatusInternalServerError, "failed to marshal lists")
+		return
+	}
+
+	err = h.redis.Set(ctx, cacheKey, listsBytes, cacheTTL).Err()
+	if err != nil {
+		logrus.Errorf("failed to set lists in redis: %s", err)
 	}
 
 	c.JSON(http.StatusOK, getAllListsResponse{
@@ -95,6 +134,8 @@ func (h *Handler) updateList(c *gin.Context) {
 		return
 	}
 
+	h.invalidateCache(userId)
+
 	c.JSON(http.StatusOK, statusResponse{"ok"})
 }
 
@@ -116,7 +157,18 @@ func (h *Handler) deleteList(c *gin.Context) {
 		return
 	}
 
+	h.invalidateCache(userId)
+
 	c.JSON(http.StatusOK, statusResponse{
 		Status: "ok",
 	})
+}
+
+func (h *Handler) invalidateCache(userId int) {
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("lists:user:%d", userId)
+	err := h.redis.Del(ctx, cacheKey).Err()
+	if err != nil {
+		logrus.Errorf("failed to delete cache for user %d: %s", userId, err.Error())
+	}
 }

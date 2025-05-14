@@ -6,3 +6,8 @@ db:
   port: "5437"
   dbname: "todo_rest"
   sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0

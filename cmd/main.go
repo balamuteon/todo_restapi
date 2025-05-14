@@ -16,6 +16,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
+	"github.com/go-redis/redis/v8" 
 )
 
 func main() {
@@ -40,9 +41,15 @@ func main() {
 		logrus.Fatalf("failed to initialize db: %s", err.Error())
 	}
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: viper.GetString("redis.addr"),
+		Password: viper.GetString("redis.password:)"),
+		DB: viper.GetInt("redis.db"),
+	})
+
 	repos := repository.NewRepository(db)
 	services := service.NewService(repos)
-	handlers := handler.NewHandler(services)
+	handlers := handler.NewHandler(services, redisClient)
 
 	srv := new(todo.Server)
 
