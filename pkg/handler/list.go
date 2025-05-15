@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,7 +17,7 @@ func (h *Handler) createList(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer h.invalidateListCache(userId)
+	defer h.invalidateListCache(c, userId)
 
 	var input todo.TodoList
 	if err := c.BindJSON(&input); err != nil {
@@ -47,7 +46,7 @@ func (h *Handler) getAllLists(c *gin.Context) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	cacheKey := fmt.Sprintf("user:%d:lists", userId)
 	cacheValue, err := h.cache.Get(ctx, cacheKey)
 	if err == nil {
@@ -70,7 +69,7 @@ func (h *Handler) getAllLists(c *gin.Context) {
 		return
 	}
 
-	h.cache.Set(ctx, cacheKey, lists, cache.СacheTTL)
+	h.cache.Set(ctx, cacheKey, lists, cache.CacheTTL)
 
 	c.JSON(http.StatusOK, getAllListsResponse{
 		Data: lists,
@@ -90,7 +89,7 @@ func (h *Handler) getListById(c *gin.Context) {
 	}
 
 	var list todo.TodoList
-	ctx := context.Background()
+	ctx := c.Request.Context()
 	cacheKey := fmt.Sprintf("user:%d:lists:%d", userId, id)
 	cacheValue, err := h.cache.Get(ctx, cacheKey)
 	if err == nil {
@@ -109,7 +108,7 @@ func (h *Handler) getListById(c *gin.Context) {
 		return
 	}
 
-	h.cache.Set(ctx, cacheKey, list, cache.СacheTTL)
+	h.cache.Set(ctx, cacheKey, list, cache.CacheTTL)
 
 	c.JSON(http.StatusOK, list)
 }
@@ -119,7 +118,7 @@ func (h *Handler) updateList(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer h.invalidateListCache(userId)
+	defer h.invalidateListCache(c, userId)
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -146,7 +145,7 @@ func (h *Handler) deleteList(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer h.invalidateListCache(userId)
+	defer h.invalidateListCache(c, userId)
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -165,9 +164,12 @@ func (h *Handler) deleteList(c *gin.Context) {
 	})
 }
 
-func (h *Handler) invalidateListCache(userId int) {
-	ctx := context.Background()
+func (h *Handler) invalidateListCache(c *gin.Context, userId int) {
+	ctx := c.Request.Context()
 	cachePattern := fmt.Sprintf("user:%d:lists*", userId)
-	h.cache.Delete(ctx, cachePattern)
-	logrus.Debug("cache invalidated")
+	if err := h.cache.Delete(ctx, cachePattern); err != nil {
+		logrus.Errorf("failed to invalidate cache: %v", err)
+	} else {
+		logrus.Debug("cache invalidated")
+	}
 }

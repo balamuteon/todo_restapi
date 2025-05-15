@@ -1,7 +1,6 @@
 package main
 
 import (
-	// "log"
 	"context"
 	"net/http"
 	"os"
@@ -13,7 +12,6 @@ import (
 	"github.com/balamuteon/todo_restapi/pkg/handler"
 	"github.com/balamuteon/todo_restapi/pkg/repository"
 	"github.com/balamuteon/todo_restapi/pkg/service"
-	"github.com/go-redis/redis/v8"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
@@ -21,8 +19,8 @@ import (
 )
 
 func main() {
-	logrus.SetFormatter(new(logrus.JSONFormatter)) // log formatting as json
-	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetFormatter(new(logrus.JSONFormatter))
+	// logrus.SetLevel(logrus.DebugLevel)
 	if err := initConfig(); err != nil {
 		logrus.Fatalf("error initializing configs: %s", err.Error())
 	}
@@ -43,13 +41,16 @@ func main() {
 		logrus.Fatalf("failed to initialize db: %s", err.Error())
 	}
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:      viper.GetString("redis.addr"),
+	client, err := cache.NewRedisClient(&cache.Options{
+		Addr:     viper.GetString("redis.addr"),
 		Password: viper.GetString("redis.password"),
-		DB:        viper.GetInt("redis.db"),
+		DB:       viper.GetInt("redis.db"),
 	})
+	if err != nil {
+		logrus.Fatalf("failed to initialize cache client: %s", err.Error())
+	}
 
-	cache := cache.NewCache(redisClient)
+	cache := cache.NewCache(client)
 	repos := repository.NewRepository(db)
 	services := service.NewService(repos)
 	handlers := handler.NewHandler(services, cache)
@@ -72,6 +73,10 @@ func main() {
 
 	if err := srv.Shutdown(context.Background()); err != nil {
 		logrus.Errorf("error occured on server shutting down: %s", err.Error())
+	}
+
+	if err := client.Close(); err != nil {
+		logrus.Errorf("error occured on redis connection close: %s", err.Error())
 	}
 
 	if err := db.Close(); err != nil {
