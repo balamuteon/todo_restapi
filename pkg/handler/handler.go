@@ -3,15 +3,18 @@ package handler
 import (
 	"github.com/balamuteon/todo_restapi/pkg/service"
 	"github.com/gin-gonic/gin"
+	"github.com/balamuteon/todo_restapi/pkg/cache"
 )
 
 type Handler struct {
 	services *service.Service
+	cache cache.Cache
 }
 
-func NewHandler(services *service.Service) *Handler {
+func NewHandler(services *service.Service, cache cache.Cache) *Handler {
 	return &Handler{
 		services: services,
+		cache: cache,
 	}
 }
 

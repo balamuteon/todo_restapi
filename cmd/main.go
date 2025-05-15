@@ -9,9 +9,11 @@ import (
 	"syscall"
 
 	todo "github.com/balamuteon/todo_restapi"
+	"github.com/balamuteon/todo_restapi/pkg/cache"
 	"github.com/balamuteon/todo_restapi/pkg/handler"
 	"github.com/balamuteon/todo_restapi/pkg/repository"
 	"github.com/balamuteon/todo_restapi/pkg/service"
+	"github.com/go-redis/redis/v8"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
@@ -20,6 +22,7 @@ import (
 
 func main() {
 	logrus.SetFormatter(new(logrus.JSONFormatter)) // log formatting as json
+	logrus.SetLevel(logrus.DebugLevel)
 	if err := initConfig(); err != nil {
 		logrus.Fatalf("error initializing configs: %s", err.Error())
 	}
@@ -40,14 +43,21 @@ func main() {
 		logrus.Fatalf("failed to initialize db: %s", err.Error())
 	}
 
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:      viper.GetString("redis.addr"),
+		Password: viper.GetString("redis.password"),
+		DB:        viper.GetInt("redis.db"),
+	})
+
+	cache := cache.NewCache(redisClient)
 	repos := repository.NewRepository(db)
 	services := service.NewService(repos)
-	handlers := handler.NewHandler(services)
+	handlers := handler.NewHandler(services, cache)
 
 	srv := new(todo.Server)
 
 	go func() {
-		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil && err != http.ErrServerClosed{
+		if err := srv.Run(viper.GetString("port"), handlers.InitRoutes()); err != nil && err != http.ErrServerClosed {
 			logrus.Fatalf("error occured while running http server: %s", err.Error())
 		}
 	}()

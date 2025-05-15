@@ -1,18 +1,24 @@
 package handler
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	todo "github.com/balamuteon/todo_restapi"
+	"github.com/balamuteon/todo_restapi/pkg/cache"
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 func (h *Handler) createList(c *gin.Context) {
-	UserId, err := getUserId(c)
+	userId, err := getUserId(c)
 	if err != nil {
 		return
 	}
+	defer h.invalidateListCache(userId)
 
 	var input todo.TodoList
 	if err := c.BindJSON(&input); err != nil {
@@ -20,11 +26,12 @@ func (h *Handler) createList(c *gin.Context) {
 		return
 	}
 
-	id, err := h.services.TodoList.Create(UserId, input)
+	id, err := h.services.TodoList.Create(userId, input)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
 	c.JSON(http.StatusOK, map[string]interface{}{
 		"id": id,
 	})
@@ -40,11 +47,30 @@ func (h *Handler) getAllLists(c *gin.Context) {
 		return
 	}
 
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("user:%d:lists", userId)
+	cacheValue, err := h.cache.Get(ctx, cacheKey)
+	if err == nil {
+		var lists []todo.TodoList
+		if err := json.Unmarshal([]byte(cacheValue), &lists); err != nil {
+			newErrorResponse(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		c.JSON(http.StatusOK, getAllListsResponse{
+			Data: lists,
+		})
+		logrus.Debug("got from cache")
+		return
+	}
+
 	lists, err := h.services.TodoList.GetAll(userId)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.cache.Set(ctx, cacheKey, lists, cache.СacheTTL)
 
 	c.JSON(http.StatusOK, getAllListsResponse{
 		Data: lists,
@@ -63,11 +89,27 @@ func (h *Handler) getListById(c *gin.Context) {
 		return
 	}
 
-	list, err := h.services.TodoList.GetById(userId, id)
+	var list todo.TodoList
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("user:%d:lists:%d", userId, id)
+	cacheValue, err := h.cache.Get(ctx, cacheKey)
+	if err == nil {
+		if err := json.Unmarshal([]byte(cacheValue), &list); err != nil {
+			newErrorResponse(c, http.StatusInternalServerError, err.Error())
+			return
+		}
+		c.JSON(http.StatusOK, list)
+		logrus.Debug("got from cache")
+		return
+	}
+
+	list, err = h.services.TodoList.GetById(userId, id)
 	if err != nil {
 		newErrorResponse(c, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.cache.Set(ctx, cacheKey, list, cache.СacheTTL)
 
 	c.JSON(http.StatusOK, list)
 }
@@ -77,6 +119,7 @@ func (h *Handler) updateList(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	defer h.invalidateListCache(userId)
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -103,6 +146,7 @@ func (h *Handler) deleteList(c *gin.Context) {
 	if err != nil {
 		return
 	}
+	defer h.invalidateListCache(userId)
 
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -119,4 +163,11 @@ func (h *Handler) deleteList(c *gin.Context) {
 	c.JSON(http.StatusOK, statusResponse{
 		Status: "ok",
 	})
+}
+
+func (h *Handler) invalidateListCache(userId int) {
+	ctx := context.Background()
+	cachePattern := fmt.Sprintf("user:%d:lists*", userId)
+	h.cache.Delete(ctx, cachePattern)
+	logrus.Debug("cache invalidated")
 }
