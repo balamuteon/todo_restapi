@@ -65,7 +65,7 @@ func (h *Handler) getAllLists(c *gin.Context) {
 
 	lists, err := h.services.TodoList.GetAll(userId)
 	if err != nil {
-		newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		newErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *Handler) getListById(c *gin.Context) {
 
 	list, err = h.services.TodoList.GetById(userId, id)
 	if err != nil {
-		newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		newErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 

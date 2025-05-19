@@ -50,7 +50,7 @@ func (h *Handler) getAllItems(c *gin.Context) {
 
 	items, err := h.services.TodoItem.GetAll(userId, listId)
 	if err != nil {
-		newErrorResponse(c, http.StatusBadRequest, "unable to provide requested data")
+		newErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 
@@ -71,7 +71,7 @@ func (h *Handler) getItemById(c *gin.Context) {
 
 	item, err := h.services.TodoItem.GetById(userId, itemId)
 	if err != nil {
-		newErrorResponse(c, http.StatusInternalServerError, err.Error())
+		newErrorResponse(c, http.StatusNotFound, err.Error())
 		return
 	}
 
