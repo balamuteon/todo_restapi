@@ -4,10 +4,9 @@ db:
   username: "postgres"
   host: "localhost"
   port: "5437"
-  dbname: "todo_rest"
+  dbname: "todo"
   sslmode: "disable"
 
 redis:
   addr: "localhost:6379"
-  password: ""
   db: 0

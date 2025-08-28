@@ -5,14 +5,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	todo "github.com/balamuteon/todo_restapi"
 	"github.com/balamuteon/todo_restapi/pkg/cache"
 	"github.com/balamuteon/todo_restapi/pkg/handler"
 	"github.com/balamuteon/todo_restapi/pkg/repository"
 	"github.com/balamuteon/todo_restapi/pkg/service"
-	"github.com/joho/godotenv"
+	"github.com/jmoiron/sqlx"
+
 	_ "github.com/lib/pq"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
@@ -20,30 +23,44 @@ import (
 
 func main() {
 	logrus.SetFormatter(new(logrus.JSONFormatter))
-	// logrus.SetLevel(logrus.DebugLevel)
+
+	// Инициализируем Viper для чтения переменных окружения
 	if err := initConfig(); err != nil {
 		logrus.Fatalf("error initializing configs: %s", err.Error())
 	}
 
-	if err := godotenv.Load(); err != nil {
-		logrus.Fatalf("error loading env variables: %s", err.Error())
+	// Добавляем цикл повторных попыток подключения к БД
+	var db *sqlx.DB
+	var err error
+	maxRetries := 5
+	retryDelay := time.Second * 5
+
+	for i := 0; i < maxRetries; i++ {
+		db, err = repository.NewPostgresDB(repository.Config{
+			Host:     viper.GetString("db.host"),
+			Port:     viper.GetString("db.port"),
+			Username: viper.GetString("db.username"),
+			DBName:   viper.GetString("db.dbname"),
+			SSLMode:  viper.GetString("db.sslmode"),
+			Password: viper.GetString("db.password"), // Viper теперь управляет и паролем
+		})
+
+		if err == nil {
+			logrus.Info("Successfully connected to the database.")
+			break // Успешно подключились, выходим из цикла
+		}
+
+		logrus.Warnf("Failed to connect to db, retrying in %v... (%d/%d)", retryDelay, i+1, maxRetries)
+		time.Sleep(retryDelay)
 	}
 
-	db, err := repository.NewPostgresDB(repository.Config{
-		Host:     viper.GetString("db.host"),
-		Port:     viper.GetString("db.port"),
-		Username: viper.GetString("db.username"),
-		DBName:   viper.GetString("db.dbname"),
-		SSLMode:  viper.GetString("db.sslmode"),
-		Password: os.Getenv("DB_PASSWORD"),
-	})
 	if err != nil {
-		logrus.Fatalf("failed to initialize db: %s", err.Error())
+		logrus.Fatalf("failed to initialize db after %d retries: %s", maxRetries, err.Error())
 	}
 
 	client, err := cache.NewRedisClient(&cache.Options{
 		Addr:     viper.GetString("redis.addr"),
-		Password: viper.GetString("redis.password"),
+		Password: os.Getenv("REDIS_PASSWORD"),
 		DB:       viper.GetInt("redis.db"),
 	})
 	if err != nil {
@@ -87,5 +104,17 @@ func main() {
 func initConfig() error {
 	viper.AddConfigPath("configs")
 	viper.SetConfigName("config")
-	return viper.ReadInConfig()
+	if err := viper.ReadInConfig(); err != nil {
+		logrus.Warn("config file not found, relying on environment variables")
+	}
+
+	viper.AutomaticEnv()
+	// Заменяем точки на подчеркивания для переменных (db.host -> DB_HOST)
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+
+	viper.SetDefault("db.host", "db")
+	viper.SetDefault("db.port", "5432")
+	viper.SetDefault("db.sslmode", "disable")
+
+	return nil
 }

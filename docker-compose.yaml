@@ -1,0 +1,45 @@
+services:
+  app:
+    build: .
+    image: todo-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      # Переменные для Viper (заменят значения из config.yml)
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=123
+      - DB_DBNAME=todo
+      - DB_SSLMODE=disable
+      # Переменные для Redis
+      - REDIS_ADDR=redis:6379
+      - REDIS_PASSWORD=
+      - REDIS_DB=0
+    depends_on:
+      - db
+      - redis
+    restart: on-failure
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=123
+      - POSTGRES_DB=todo
+    ports:
+      - "5437:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+volumes:
+  db_data:
+  redis_data:
